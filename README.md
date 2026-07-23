@@ -1,6 +1,7 @@
 # 交易备注平台
 
 记录自选股交易笔记，可视化 K 线与买卖点。
+<img width="2828" height="1344" alt="image" src="https://github.com/user-attachments/assets/255abb13-ea44-4b6e-9a20-45de8e33d0a9" />
 
 ---
 
