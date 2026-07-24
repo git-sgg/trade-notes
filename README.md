@@ -5,28 +5,100 @@
 
 ---
 
-## 快速启动
+## 功能说明
 
-### 方式一：Docker 一键部署（推荐 NAS）
+### 自选股管理
+- 输入股票代码添加自选（自动解析中文名）
+- 支持 A 股（6位代码）和美股
+- 删除股票
 
-```bash
-cd trade-notes
-docker-compose up -d
-```
+### K 线图
+- A 股使用腾讯历史 K 线（近 90 天，含今日）
+- 点击买入/卖出按钮记录交易
+- 买卖点标注在 K 线图上（🔴买入 / 🟢卖出）
+- 鼠标悬停显示交易详情
 
-访问：http://你的NAS IP/
+### 交易记录
+- 填写价格、日期、理由（可选）
+- 记录成交股数（默认 100 股）
+- 支持编辑和删除
+- 股票卡片显示当前盈亏
 
 ---
 
-### 方式二：本地开发调试
+## 快速部署
+
+### 方式一：NAS Docker（推荐）
+
+**前置条件：** NAS 上已安装 Docker，可通过 GUI 管理容器。
+
+#### 1. 导入镜像
+
+从 GitHub Releases 或本地构建获得 `trade-notes-backend.tar`，导入到 NAS Docker。
+
+#### 2. 创建 MySQL 容器
+
+| 配置项 | 值 |
+|--------|---|
+| 容器名称 | `mysql` |
+| 镜像 | `mysql:8` |
+| 端口 | `3306:3306` |
+| 环境变量 | `MYSQL_ROOT_PASSWORD=trade123`<br>`MYSQL_DATABASE=trade_notes` |
+| 自动重启 | ✅ |
+
+**初始化数据库**（SSH 或容器终端执行）：
+```sql
+docker exec -it mysql mysql -uroot -ptrade123 -e "
+CREATE DATABASE IF NOT EXISTS trade_notes CHARACTER SET utf8mb4;
+USE trade_notes;
+CREATE TABLE IF NOT EXISTS stock_watch (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL DEFAULT 'default',
+    symbol VARCHAR(20) NOT NULL,
+    name VARCHAR(100),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS trade_record (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    stock_id BIGINT NOT NULL,
+    trade_type VARCHAR(10) NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    quantity INT NOT NULL DEFAULT 100,
+    trade_date DATE NOT NULL,
+    reason TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"
+```
+
+#### 3. 创建后端容器
+
+| 配置项 | 值 |
+|--------|---|
+| 容器名称 | `trade-notes-backend` |
+| 镜像 | `trade-notes-backend:latest` |
+| 端口 | `8888:8888` |
+| 环境变量 | `DB_HOST=mysql`<br>`DB_PORT=3306`<br>`DB_USER=root`<br>`DB_PASS=trade123` |
+| 自动重启 | ✅ |
+
+#### 4. 访问
+
+```
+http://NAS_IP:8888/
+```
+
+---
+
+### 方式二：本地开发
 
 #### 前置条件
+
 - JDK 17+
 - Maven 3.9+
 - Node.js 20+
-- Docker Desktop（提供 MySQL）
+- Docker（提供 MySQL）
 
-#### 1. 启动 MySQL（Docker）
+#### 1. 启动 MySQL
 
 ```bash
 docker run -d --name trade-notes-mysql \
@@ -39,32 +111,20 @@ docker run -d --name trade-notes-mysql \
 #### 2. 初始化数据库
 
 ```bash
-docker exec -i trade-notes-mysql mysql -uroot -ptrade123 trade_notes < init.sql
+docker exec -i trade-notes-mysql mysql -uroot -ptrade123 < init.sql
 ```
 
-#### 3. 启动后端（8888 端口）
+#### 3. 启动后端
 
 ```bash
 cd backend
-
-# 使用环境变量传入 Alpha Vantage Key
-# 方式一：export（推荐）
-export STOCK_API_KEY=你的Key
-export DB_HOST=localhost
-export DB_PORT=3307
-mvn spring-boot:run
-
-# 方式二：命令行参数
 mvn spring-boot:run \
-  -Dspring-boot.run.arguments="--stock.api-key=你的Key --spring.datasource.url=jdbc:mysql://localhost:3307/trade_notes?..."
-
-# 方式三：JAR 直接运行
-java -jar target/trade-notes-backend-1.0.0.jar \
-  --spring.datasource.url="jdbc:mysql://localhost:3307/trade_notes?..." \
-  --stock.api-key=你的Key
+  -Dspring-boot.run.arguments="--spring.datasource.url=jdbc:mysql://localhost:3307/trade_notes"
 ```
 
-#### 4. 启动前端（5173 端口）
+后端启动后监听 `8888` 端口。
+
+#### 4. 启动前端
 
 ```bash
 cd frontend
@@ -72,36 +132,15 @@ npm install
 npm run dev
 ```
 
-访问：http://localhost:5173/
+访问 `http://localhost:5173/`（Vite 开发服务器会自动代理 `/api` 到后端 8888）
 
----
+#### 5. 构建前端
 
-## 功能说明
+```bash
+npm run build
+```
 
-### 添加股票
-在顶部输入框输入股票代码：
-- **美股**：如 `AAPL`、`TSLA`、`MSFT`
-- **A股**：如 `600519`（茅台）、`000001`（平安）
-
-### K 线图
-- 默认显示最近 180 天走势
-- **左右拖动**：缩放时间范围
-- **滚轮**：放大/缩小
-- 当 Yahoo Finance 数据源不可用时，自动使用模拟数据展示
-
-### 交易记录
-- 点击 **买入 / 卖出** 按钮，填写价格、日期、理由
-- 买卖点标注在 K 线图上（🔴买入 / 🟢卖出）
-- 鼠标悬停显示交易详情（价格、日期、理由）
-- 可删除单条记录
-
-### 数据源
-- **主力**：Yahoo Finance（免费，无需 API Key）
-- **降级**：模拟数据（当 Yahoo 不可用时）
-- ⚠️ Alpha Vantage 免费版每天 **25 次请求**，每次返回约 100 条日线数据。
-  - 已内置 10 分钟内存缓存，同一股票 10 分钟内不重复请求
-  - 加载 5 只股票仅消耗 5 次（远低于限额）
-  - 如需更高频率，申请 [Twelve Data](https://twelvedata.com/pricing) 免费版作为备用
+前端打包到 `backend/src/main/resources/static/`，重启后端即可生效。
 
 ---
 
@@ -109,22 +148,25 @@ npm run dev
 
 ```
 trade-notes/
-├── docker-compose.yml    # Docker 部署配置
-├── init.sql              # 数据库初始化脚本
 ├── backend/              # Spring Boot 后端
 │   ├── src/main/java/com/tradenotes/
-│   │   ├── controller/   # REST API
-│   │   ├── service/      # 业务逻辑
-│   │   ├── mapper/       # MyBatis-Plus Mapper
-│   │   └── entity/        # 数据实体
+│   │   ├── controller/    # REST API
+│   │   ├── service/       # 业务逻辑
+│   │   ├── mapper/        # MyBatis-Plus Mapper
+│   │   └── entity/       # 数据实体
+│   ├── src/main/resources/
+│   │   └── static/        # 前端打包输出（自动生成）
 │   └── Dockerfile
-└── frontend/             # Vue3 前端
-    ├── src/
-    │   ├── App.vue       # 主组件（ECharts + 弹窗）
-    │   └── api/index.js  # API 调用
-    ├── nginx.conf        # Nginx 配置（含 API 代理）
-    └── Dockerfile
+├── frontend/             # Vue3 前端
+│   ├── src/
+│   │   └── App.vue       # 主组件
+│   ├── vite.config.js    # 构建输出到 ../backend/src/main/resources/static
+│   └── package.json
+├── docker-compose.yml
+└── init.sql
 ```
+
+---
 
 ## API 列表
 
@@ -136,6 +178,7 @@ trade-notes/
 | GET | `/api/stocks/{id}/prices?days=90` | 获取 K 线数据 |
 | GET | `/api/stocks/{id}/records` | 获取交易记录 |
 | POST | `/api/stocks/{id}/records` | 添加交易记录 |
+| PUT | `/api/stocks/records/{id}` | 编辑交易记录 |
 | DELETE | `/api/stocks/records/{id}` | 删除交易记录 |
 
 ---
@@ -144,7 +187,8 @@ trade-notes/
 
 | 层 | 技术 |
 |---|---|
-| 前端 | Vue 3 + ECharts 5 + Axios |
+| 前端 | Vue 3 + ECharts 5 + Axios + Vite |
 | 后端 | Spring Boot 3.2 + MyBatis-Plus |
 | 数据库 | MySQL 8 |
-| 部署 | Docker + Nginx |
+| K 线数据 | 腾讯历史 K 线 API（A股）/ Alpha Vantage（美股） |
+| 部署 | Docker（前后端合并镜像） |
