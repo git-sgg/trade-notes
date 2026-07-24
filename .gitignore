@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 backend/target/
 frontend/dist/
+backend/src/main/resources/static/
 
 # IDE
 .idea/
