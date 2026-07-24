@@ -1,7 +1,6 @@
 # 交易备注平台
 
 记录自选股交易笔记，可视化 K 线与买卖点。
-<img width="2828" height="1344" alt="image" src="https://github.com/user-attachments/assets/255abb13-ea44-4b6e-9a20-45de8e33d0a9" />
 
 ---
 
@@ -26,15 +25,31 @@
 
 ---
 
-## 快速部署
+## 构建与部署
 
-### 方式一：NAS Docker（推荐）
+### 一、构建 Docker 镜像（Mac 本地执行）
 
-**前置条件：** NAS 上已安装 Docker，可通过 GUI 管理容器。
+```bash
+cd trade-notes
+
+# 前端打包
+cd frontend && npm install && npm run build && cd ..
+
+# 后端编译 + 打包 JAR
+cd backend && mvn package -DskipTests && cd ..
+
+# 构建 Docker 镜像
+docker build -t trade-notes-backend:latest ./backend
+
+# 导出为 tar 文件（拷到 NAS）
+docker save trade-notes-backend:latest | gzip > ~/Desktop/trade-notes-backend.tar.gz
+```
+
+### 二、部署到 NAS
 
 #### 1. 导入镜像
 
-从 GitHub Releases 或本地构建获得 `trade-notes-backend.tar`，导入到 NAS Docker。
+将 `trade-notes-backend.tar.gz` 拷贝到 NAS，在 NAS 的 Docker 管理界面导入镜像。
 
 #### 2. 创建 MySQL 容器
 
@@ -46,7 +61,10 @@
 | 环境变量 | `MYSQL_ROOT_PASSWORD=trade123`<br>`MYSQL_DATABASE=trade_notes` |
 | 自动重启 | ✅ |
 
-**初始化数据库**（SSH 或容器终端执行）：
+#### 3. 初始化数据库（执行一次即可）
+
+在 NAS 的 Docker 容器终端或数据库管理工具中执行：
+
 ```sql
 docker exec -it mysql mysql -uroot -ptrade123 -e "
 CREATE DATABASE IF NOT EXISTS trade_notes CHARACTER SET utf8mb4;
@@ -71,7 +89,7 @@ CREATE TABLE IF NOT EXISTS trade_record (
 "
 ```
 
-#### 3. 创建后端容器
+#### 4. 创建后端容器
 
 | 配置项 | 值 |
 |--------|---|
@@ -81,7 +99,7 @@ CREATE TABLE IF NOT EXISTS trade_record (
 | 环境变量 | `DB_HOST=mysql`<br>`DB_PORT=3306`<br>`DB_USER=root`<br>`DB_PASS=trade123` |
 | 自动重启 | ✅ |
 
-#### 4. 访问
+#### 5. 访问
 
 ```
 http://NAS_IP:8888/
@@ -89,7 +107,7 @@ http://NAS_IP:8888/
 
 ---
 
-### 方式二：本地开发
+### 三、本地开发调试
 
 #### 前置条件
 
@@ -118,11 +136,10 @@ docker exec -i trade-notes-mysql mysql -uroot -ptrade123 < init.sql
 
 ```bash
 cd backend
-mvn spring-boot:run \
-  -Dspring-boot.run.arguments="--spring.datasource.url=jdbc:mysql://localhost:3307/trade_notes"
+mvn spring-boot:run
 ```
 
-后端启动后监听 `8888` 端口。
+后端监听 `8888` 端口。
 
 #### 4. 启动前端
 
@@ -132,15 +149,7 @@ npm install
 npm run dev
 ```
 
-访问 `http://localhost:5173/`（Vite 开发服务器会自动代理 `/api` 到后端 8888）
-
-#### 5. 构建前端
-
-```bash
-npm run build
-```
-
-前端打包到 `backend/src/main/resources/static/`，重启后端即可生效。
+访问 `http://localhost:5173/`，Vite 会自动代理 `/api` 到后端 8888。
 
 ---
 
@@ -148,22 +157,24 @@ npm run build
 
 ```
 trade-notes/
-├── backend/              # Spring Boot 后端
+├── backend/                           # Spring Boot 后端
 │   ├── src/main/java/com/tradenotes/
-│   │   ├── controller/    # REST API
-│   │   ├── service/       # 业务逻辑
-│   │   ├── mapper/        # MyBatis-Plus Mapper
-│   │   └── entity/       # 数据实体
+│   │   ├── controller/                # REST API
+│   │   ├── service/                   # 业务逻辑
+│   │   ├── mapper/                    # MyBatis-Plus Mapper
+│   │   └── entity/                    # 数据实体
 │   ├── src/main/resources/
-│   │   └── static/        # 前端打包输出（自动生成）
-│   └── Dockerfile
-├── frontend/             # Vue3 前端
+│   │   └── static/                    # 前端打包输出（.gitignore，不上传 git）
+│   ├── Dockerfile
+│   └── pom.xml
+├── frontend/                          # Vue3 前端
 │   ├── src/
-│   │   └── App.vue       # 主组件
-│   ├── vite.config.js    # 构建输出到 ../backend/src/main/resources/static
+│   │   └── App.vue                    # 主组件
+│   ├── vite.config.js                 # 构建输出到 ../backend/src/main/resources/static
 │   └── package.json
 ├── docker-compose.yml
-└── init.sql
+├── init.sql
+└── README.md
 ```
 
 ---
