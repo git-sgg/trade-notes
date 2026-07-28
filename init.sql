@@ -26,3 +26,20 @@ CREATE TABLE IF NOT EXISTS trade_record (
     INDEX idx_stock_id (stock_id),
     FOREIGN KEY (stock_id) REFERENCES stock_watch(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 七鲜超市门店表
+CREATE TABLE IF NOT EXISTS seven_fresh_stores (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL COMMENT '门店名称',
+    address VARCHAR(255) COMMENT '门店地址',
+    start_time_online VARCHAR(10) COMMENT '线上营业开始',
+    end_time_online VARCHAR(10) COMMENT '线上营业结束',
+    start_time_offline VARCHAR(10) COMMENT '线下营业开始',
+    end_time_offline VARCHAR(10) COMMENT '线下营业结束',
+    longitude DECIMAL(10, 7) COMMENT '经度',
+    latitude DECIMAL(10, 7) COMMENT '纬度',
+    status INT COMMENT '状态',
+    created_time DATETIME,
+    INDEX idx_longitude (longitude),
+    INDEX idx_latitude (latitude)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
