@@ -258,6 +258,7 @@ function showStoreInfo(store, brand, pt) {
   requestAnimationFrame(() => updateInfoPanelPos())
   mapInstance.addEventListener('moveend', updateInfoPanelPos)
   mapInstance.addEventListener('zoomend', updateInfoPanelPos)
+
 }
 
 let activeInfoPanelPt = null
@@ -289,6 +290,10 @@ function closeStoreInfo() {
     mapInstance.removeEventListener('moveend', updateInfoPanelPos)
     mapInstance.removeEventListener('zoomend', updateInfoPanelPos)
   }
+  // 正常模式（非校准）下恢复 pointer，否则 BMapGL 拖拽后 restore 为 default 导致标注无法点击
+  if (mapInstance && !adjustMode.value) {
+    document.getElementById('baidu-map').style.cursor = 'pointer'
+  }
 }
 
 // 进入校准模式
@@ -296,7 +301,7 @@ function enterAdjustMode(store, brand) {
   adjustMode.value = true
   adjustTarget.value = store
   adjustTargetBrand.value = brand
-  document.getElementById('baidu-map').style.cursor = 'crosshair'
+  document.getElementById('baidu-map').style.cursor = 'crosshair !important'
   showAdjustBanner(store.name)
 }
 
@@ -439,6 +444,7 @@ onUnmounted(() => {
   transition: background .15s;
 }
 .store-info-panel .sip-adjust:hover { background: #1a4bc9; }
+#baidu-map { cursor: pointer !important; }
 </style>
 
 <style scoped>
