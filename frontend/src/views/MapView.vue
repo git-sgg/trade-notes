@@ -37,6 +37,9 @@ let storeMarkers = []
 // 搜索结果标注
 let searchMarkers = []
 
+// 标记本次 click 由 marker 触发，用于过滤 BMapGL 的 map click 冒泡
+let suppressMapClick = false
+
 // 七鲜图标
 const SEVEN_FRESH_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">' +
@@ -142,13 +145,21 @@ function initBaiduMap() {
   loadStores()
 
   // 地图点击事件（校准 / 逆向地理编码）
+  // 关键：BMapGL 点击 marker 会同时派发 marker click 和 map click（map click 由 BMapGL 内部主动派发，
+  // 非 DOM 冒泡，故 e.domEvent.stopPropagation() 无效）。用 suppressMapClick 标志位过滤掉这次多余的 map click，
+  // 否则 reverseGeocode 会弹出百度原生 InfoWindow 覆盖自定义门店面板。
   mapInstance.addEventListener('click', function(e) {
+    if (suppressMapClick) {
+      suppressMapClick = false
+      return
+    }
     if (adjustMode.value && adjustTarget.value) {
       // 校准模式：记录新坐标
       const newLat = e.latlng.lat, newLng = e.latlng.lng
       finishAdjust(newLat, newLng, adjustTargetBrand.value)
     } else {
-      // 逆向地理编码：显示地址
+      // 点击空白处：关闭门店面板 + 逆向地理编码显示地址
+      closeStoreInfo()
       reverseGeocode(e.latlng.lng, e.latlng.lat)
     }
   })
@@ -218,8 +229,6 @@ function renderStores(stores, brand, iconSrc) {
     storeMarkers.push(marker)
 
     marker.addEventListener('click', (e) => {
-      // BMapGL 中 marker click 会传播到 map click，阻止双重弹窗
-      if (e.domEvent) e.domEvent.stopPropagation()
       showStoreInfo(s, brand, pt)
     })
   })
@@ -227,6 +236,9 @@ function renderStores(stores, brand, iconSrc) {
 
 // 显示门店 InfoWindow — 用自定义 DOM 覆盖层（百度 InfoWindow 在 iframe 沙箱里，window 全局方法失效）
 function showStoreInfo(store, brand, pt) {
+  // 标记本次为 marker 点击，过滤随后冒泡上来的 map click（避免百度原生 InfoWindow 覆盖）
+  suppressMapClick = true
+  setTimeout(() => { suppressMapClick = false }, 100)
   closeStoreInfo()
   const statusText = brand === 'sam-gray' ? '<span style="color:#9CA3AF">（筹建中）</span>' : ''
   const el = document.createElement('div')
