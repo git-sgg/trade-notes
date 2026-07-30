@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -16,20 +15,12 @@ public class StoreService {
 
     private final StoreMapper storeMapper;
 
-    public List<Store> getAllStores() {
-        return storeMapper.selectList(new QueryWrapper<>());
-    }
-
-    public void saveStores(List<Store> stores) {
-        for (Store store : stores) {
-            // 先按 id 查，有则更新，无则插入
-            Store exist = storeMapper.selectById(store.getId());
-            if (exist != null) {
-                storeMapper.updateById(store);
-            } else {
-                storeMapper.insert(store);
-            }
+    /** 按品牌获取门店列表，不传 brand 则返回全部 */
+    public List<Store> getStores(String brand) {
+        if (brand == null || brand.isBlank()) {
+            return storeMapper.selectList(null);
         }
+        return storeMapper.selectList(new QueryWrapper<Store>().eq("brand", brand));
     }
 
     public void saveStore(Store store) {
@@ -39,5 +30,13 @@ public class StoreService {
         } else {
             storeMapper.insert(store);
         }
+    }
+
+    public int updateCoordinates(String id, BigDecimal lng, BigDecimal lat) {
+        Store r = new Store();
+        r.setId(id);
+        r.setLongitude(lng);
+        r.setLatitude(lat);
+        return storeMapper.updateById(r);
     }
 }

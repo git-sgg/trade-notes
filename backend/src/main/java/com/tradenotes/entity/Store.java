@@ -9,11 +9,12 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("seven_fresh_stores")
+@TableName("stores")
 public class Store {
     @TableId(type = IdType.INPUT)
     private String id;
 
+    private String brand;          // seven / hema / sam
     private String name;
     private String address;
     private String startTimeOnline;
@@ -22,6 +23,6 @@ public class Store {
     private String endTimeOffline;
     private BigDecimal longitude;
     private BigDecimal latitude;
-    private Integer status;
+    private Integer status;        // 0=营业 1=筹建
     private LocalDateTime createdTime;
 }

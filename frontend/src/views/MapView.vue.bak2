@@ -1,0 +1,347 @@
+<template>
+  <div class="map-page">
+    <div class="map-header">
+      <h2>天津超市 · 七鲜 &amp; 盒马</h2>
+      <input
+        v-model="keyword"
+        class="search-input"
+        placeholder="搜索地点"
+        @keyup.enter="searchPlace"
+      />
+      <button class="btn-search" @click="searchPlace">搜索</button>
+      <button class="btn-reset" @click="resetView">重置视图</button>
+    </div>
+    <div id="tencent-map" class="map-container"></div>
+  </div>
+</template>
+
+<script setup>
+import { onMounted, ref, onUnmounted } from 'vue'
+import axios from 'axios'
+
+// 七鲜品牌色 SVG marker（绿色水滴 + 鲜字）
+const SEVEN_FRESH_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">' +
+  '<defs><filter id="s" x="-20%" y="-10%" width="140%" height="140%">' +
+  '<feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/></filter></defs>' +
+  '<path filter="url(#s)" d="M16 0 C7 0 0 7 0 16 C0 24 16 40 16 40 C16 40 32 24 32 16 C32 7 25 0 16 0 Z" fill="#00B38A"/>' +
+  '<circle cx="16" cy="15" r="7" fill="#fff"/>' +
+  '<text x="16" y="19" font-size="10" font-weight="bold" fill="#00B38A" text-anchor="middle" font-family="Arial">鲜</text>' +
+  '</svg>'
+)
+
+// 盒马品牌色 SVG marker（蓝色水滴 + 马字）
+const HEMA_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">' +
+  '<defs><filter id="h" x="-20%" y="-10%" width="140%" height="140%">' +
+  '<feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/></filter></defs>' +
+  '<path filter="url(#h)" d="M16 0 C7 0 0 7 0 16 C0 24 16 40 16 40 C16 40 32 24 32 16 C32 7 25 0 16 0 Z" fill="#00A7E1"/>' +
+  '<circle cx="16" cy="15" r="7" fill="#fff"/>' +
+  '<text x="16" y="19" font-size="10" font-weight="bold" fill="#00A7E1" text-anchor="middle" font-family="Arial">马</text>' +
+  '</svg>'
+)
+
+// 搜索结果 marker（橙色水滴）
+const SEARCH_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">' +
+  '<defs><filter id="s2" x="-20%" y="-10%" width="140%" height="140%">' +
+  '<feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/></filter></defs>' +
+  '<path filter="url(#s2)" d="M16 0 C7 0 0 7 0 16 C0 24 16 40 16 40 C16 40 32 24 32 16 C32 7 25 0 16 0 Z" fill="#FF6B35"/>' +
+  '<circle cx="16" cy="15" r="7" fill="#fff"/>' +
+  '<text x="16" y="19" font-size="11" font-weight="bold" fill="#FF6B35" text-anchor="middle" font-family="Arial">搜</text>' +
+  '</svg>'
+)
+
+const keyword = ref('')
+let mapInstance = null
+let markers = []
+let storeMarkers = []
+let infoWindow = null
+
+const TMap_KEY = '5RMBZ-DNO6V-CUQPE-5UYKT-RZNM3-EGBUJ'
+const API_BASE = import.meta.env.VITE_API_BASE || ''
+
+onMounted(() => {
+  loadTencentMap()
+})
+
+onUnmounted(() => {
+  if (mapInstance) {
+    mapInstance = null
+  }
+})
+
+function loadTencentMap() {
+  const callbackName = '__tmap_callback_' + Date.now()
+  window[callbackName] = () => {
+    initMap()
+    delete window[callbackName]
+  }
+  const script = document.createElement('script')
+  script.src = `https://map.qq.com/api/gljs?v=1.exp&key=${TMap_KEY}&callback=${callbackName}`
+  script.onerror = () => {
+    document.getElementById('tencent-map').innerHTML =
+      '<p style="text-align:center;padding:40px;color:#f56c6c;">地图加载失败，请检查网络</p>'
+  }
+  document.head.appendChild(script)
+}
+
+function initMap() {
+  // 必须在 new TMap.Map() 之前注册 init 监听器，否则错过同步触发的 init 事件
+  mapInstance = new TMap.Map(document.getElementById('tencent-map'), {
+    center: new TMap.LatLng(39.08, 117.20),
+    zoom: 11,
+    mapStyleId: 'style1',
+  })
+
+  // 兜底：setTimeout 0 确保即使 init 已触发也能拿到 mapInstance
+  setTimeout(() => {
+    if (!infoWindow) {
+      infoWindow = new TMap.InfoWindow({
+        map: mapInstance,
+        position: new TMap.LatLng(39.08, 117.20),
+        visible: false,
+        offset: { x: 0, y: -25 },
+      })
+      infoWindow.close() // 确保强制隐藏，防止 SDK 初始化时自动弹出
+    }
+    if (!infoWindow._storesLoaded) {
+      infoWindow._storesLoaded = true
+      loadStores()
+    }
+  }, 0)
+
+  // 先尝试监听 init 事件（如果还没触发的话）
+  mapInstance.on('init', () => {
+    if (!infoWindow) {
+      infoWindow = new TMap.InfoWindow({
+        map: mapInstance,
+        position: new TMap.LatLng(39.08, 117.20),
+        visible: false,
+        offset: { x: 0, y: -25 },
+      })
+      infoWindow.close() // 确保强制隐藏，防止 SDK 初始化时自动弹出
+    }
+    if (!infoWindow._storesLoaded) {
+      infoWindow._storesLoaded = true
+      loadStores()
+    }
+  })
+}
+
+// 加载门店数据（七鲜 + 盒马）
+async function loadStores() {
+  try {
+    console.log('[debug] loadStores called, mapInstance:', !!mapInstance)
+    const [sevenRes, hemaRes] = await Promise.all([
+      axios.get(`${API_BASE}/api/stores`),
+      axios.get(`${API_BASE}/api/hema-stores`),
+    ])
+    if (sevenRes.data.success && sevenRes.data.data.length > 0) {
+      console.log('[debug] rendering', sevenRes.data.data.length, 'seven fresh stores')
+      renderStoreMarkers(sevenRes.data.data, 'seven', SEVEN_FRESH_ICON)
+    }
+    if (hemaRes.data.success && hemaRes.data.data.length > 0) {
+      console.log('[debug] rendering', hemaRes.data.data.length, 'hema stores')
+      renderStoreMarkers(hemaRes.data.data, 'hema', HEMA_ICON)
+    }
+  } catch (e) {
+    console.error('加载门店失败:', e)
+  }
+}
+
+// 渲染门店标注（brand: seven / hema）
+function renderStoreMarkers(stores, brand, iconSrc) {
+  if (!mapInstance) return
+
+  const styleId = brand + '-marker'
+  const geometries = stores.map((s) => ({
+    id: brand + '_' + s.id,
+    styleId: styleId,
+    position: new TMap.LatLng(s.latitude, s.longitude),
+  }))
+
+  const markerLayer = new TMap.MultiMarker({
+    map: mapInstance,
+    styles: {
+      [styleId]: new TMap.MarkerStyle({
+        width: 32,
+        height: 40,
+        anchor: { x: 16, y: 40 },
+        src: iconSrc,
+      }),
+    },
+    geometries,
+  })
+  console.log('[debug] markerLayer created for', brand, ':', markerLayer)
+
+  markerLayer.on('click', (e) => {
+    const realId = e.geometry.id.slice(brand.length + 1) // 去掉 brand_ 前缀
+    const store = stores.find(s => s.id === realId)
+    if (store) {
+      showInfoWindow(store, new TMap.LatLng(store.latitude, store.longitude))
+    }
+  })
+
+  storeMarkers.push(markerLayer)
+}
+
+// 显示信息窗口
+function showInfoWindow(store, position) {
+  if (!infoWindow || !store) return
+
+  const onlineTime = `${store.startTimeOnline || ''} - ${store.endTimeOnline || ''}`
+  const offlineTime = `${store.startTimeOffline || ''} - ${store.endTimeOffline || ''}`
+
+  infoWindow.open()
+  infoWindow.setContent(`
+    <div style="padding:4px 8px;min-width:200px;">
+      <div style="font-size:15px;font-weight:600;color:#1d4ed8;margin-bottom:6px;">${store.name}</div>
+      <div style="font-size:12px;color:#666;margin-bottom:4px;">📍 ${store.address}</div>
+      <div style="font-size:12px;color:#888;margin-bottom:4px;">🕐 线上: ${onlineTime}</div>
+      <div style="font-size:12px;color:#888;">🏪 线下: ${offlineTime}</div>
+    </div>
+  `)
+  infoWindow.setPosition(position)
+}
+
+// 搜索地点
+function searchPlace() {
+  if (!keyword.value.trim() || !mapInstance) return
+
+  const search = new TMap.service.Search({ pageSize: 10 })
+  search.searchRegion({
+    keyword: keyword.value,
+    regionName: '全国',
+    autoExtend: true,
+    pageIndex: 0,
+    pageSize: 10,
+  }).then((result) => {
+    mapInstance.removeOverlays(markers)
+    markers = []
+
+    if (!result.data || result.data.length === 0) {
+      alert('未找到结果')
+      return
+    }
+
+    const first = result.data[0]
+    if (first.location) {
+      mapInstance.moveToCenter(first.location, 14)
+    }
+
+    result.data.forEach((item) => {
+      if (item.location) {
+        const marker = new TMap.MultiMarker({
+          id: item.id || Math.random().toString(),
+          map: mapInstance,
+          styles: {
+            'marker': new TMap.MarkerStyle({
+              width: 32,
+              height: 40,
+              anchor: { x: 16, y: 40 },
+              src: SEARCH_ICON,
+            }),
+          },
+          geometries: [{
+            id: item.id || Math.random().toString(),
+            styleId: 'marker',
+            position: item.location,
+          }],
+        })
+        marker.on('click', () => {
+          mapInstance.moveToCenter(item.location, 15)
+        })
+        markers.push(marker)
+      }
+    })
+  }).catch((err) => {
+    console.error('搜索失败:', err)
+    alert('搜索失败，请重试')
+  })
+}
+
+// 重置视图到天津
+function resetView() {
+  if (mapInstance) {
+    mapInstance.moveToCenter(new TMap.LatLng(39.08, 117.20), 11)
+  }
+}
+</script>
+
+<style scoped>
+.map-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 45px);
+}
+
+.map-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #0d1425;
+  border-bottom: 1px solid #1a2540;
+  flex-shrink: 0;
+}
+
+.map-header h2 {
+  margin: 0;
+  font-size: 15px;
+  color: #e0e6ed;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.search-input {
+  flex: 1;
+  padding: 6px 12px;
+  border: 1px solid #2a3a5a;
+  border-radius: 4px;
+  background: #0f0f1a;
+  color: #e0e0e0;
+  font-size: 13px;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: #4a9eff;
+}
+
+.btn-search {
+  padding: 6px 14px;
+  background: #1d4ed8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.btn-search:hover {
+  background: #2563eb;
+}
+
+.btn-reset {
+  padding: 6px 12px;
+  background: transparent;
+  color: #4a5a7a;
+  border: 1px solid #2a3a5a;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.btn-reset:hover {
+  border-color: #4a5a7a;
+  color: #e0e0e0;
+}
+
+.map-container {
+  flex: 1;
+  width: 100%;
+}
+</style>

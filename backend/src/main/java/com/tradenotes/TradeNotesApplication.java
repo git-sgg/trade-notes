@@ -10,7 +10,7 @@ import org.springframework.web.client.RestTemplate;
 import java.nio.charset.StandardCharsets;
 
 @SpringBootApplication
-@MapperScan("com.tradenotes.mapper")
+@MapperScan({"com.tradenotes.mapper","com.tradenotes.backend.store"})
 public class TradeNotesApplication {
 
     public static void main(String[] args) {

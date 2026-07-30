@@ -10,7 +10,8 @@ services:
       MYSQL_DATABASE: trade_notes
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init.sql:/docker-entrypoint-initdb.d/1-init.sql
+      - ./seed_stores.sql:/docker-entrypoint-initdb.d/2-seed.sql
     ports:
       - "3307:3306"
       # 注意：宿主机端口 3307 映射到容器内 3306

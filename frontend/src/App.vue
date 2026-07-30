@@ -11,7 +11,7 @@
     </nav>
 
     <!-- 路由页面 -->
-    <router-view />
+    <router-view class="router-content" />
   </div>
 </template>
 
@@ -25,7 +25,10 @@ body {
 }
 
 .app-shell {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
   background: #0a0e1a;
 }
 
@@ -57,5 +60,13 @@ body {
 .nav-link.active {
   color: #3c78d8;
   border-bottom-color: #3c78d8;
+}
+
+.router-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 </style>
