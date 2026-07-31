@@ -39,9 +39,19 @@
               <span class="stock-symbol">{{ stock.symbol }}</span>
             </div>
             <div v-if="calcStockPnL(stock)" class="stock-pnl" :class="calcStockPnL(stock).isProfit ? 'profit' : 'loss'">
-              <span class="pnl-price">${{ calcStockPnL(stock).currentPrice }}</span>
-              <span class="pnl-sep">｜成本 ${{ calcStockPnL(stock).avgBuyPrice }}</span>
-              <span class="pnl-pct">{{ calcStockPnL(stock).abs }}</span>
+              <div class="pnl-row1">
+                <span class="pnl-price">${{ calcStockPnL(stock).currentPrice }}</span>
+                <span class="pnl-sep">｜成本 ${{ calcStockPnL(stock).avgBuyPrice }}</span>
+                <span class="pnl-sep">｜剩 {{ calcStockPnL(stock).totalQty }} 股</span>
+                <span class="pnl-pct">{{ calcStockPnL(stock).abs }}</span>
+              </div>
+              <div class="pnl-row2">
+                <span class="pnl-realized">已实现 {{ calcStockPnL(stock).realized }}</span>
+                <span class="pnl-sep">｜</span>
+                <span class="pnl-unrealized">浮动 {{ calcStockPnL(stock).unrealized }}</span>
+                <span class="pnl-sep">｜</span>
+                <span class="pnl-pct2">{{ calcStockPnL(stock).pct }}</span>
+              </div>
             </div>
             <div v-else-if="stock.chartData && stock.chartData.length > 0" class="stock-pnl no-trade">
               <span class="pnl-price">${{ stock.chartData[stock.chartData.length - 1].close }}</span>
@@ -305,41 +315,82 @@ async function handleDeleteRecord(stockId, recordId) {
 
 // ========== 盈亏计算 ==========
 /**
- * 返回 { pct, currentPrice, avgBuyPrice, abs }
- * pct: 盈亏百分比 (正=绿, 负=红)
- * currentPrice: 最新收盘价
- * avgBuyPrice: 加权平均买入价
- * abs: 绝对盈亏金额
+ * 返回 { pct, currentPrice, avgBuyPrice, abs, realized, unrealized, remainingQty, totalInvested }
+ * abs: 总盈亏 = 已实现 + 浮动盈亏
+ * realized: 已实现盈亏（卖出落袋）
+ * unrealized: 浮动盈亏（剩余持股）
+ * remainingQty: 剩余持股数
+ * totalInvested: 总买入成本
  */
 function calcStockPnL(stock) {
   const prices = stock.chartData
   const records = stock.records || []
   if (!prices || prices.length === 0 || records.length === 0) return null
 
-  // 最新价格 = K线最后一条的 close
   const currentPrice = parseFloat(prices[prices.length - 1].close)
 
-  // 加权平均买入价（按股数加权）
-  const buys = records.filter(r => r.tradeType === 'BUY')
+  // 全部买入记录，按时间排序（FIFO）
+  const buys = records
+    .filter(r => r.tradeType === 'BUY')
+    .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
   if (buys.length === 0) return null
 
-  let totalCost = 0, totalQty = 0
+  // 构建 FIFO 买入队列，每条记录 { price, qty }
+  const queue = []
   buys.forEach(r => {
     const qty = parseInt(r.quantity) || 100
-    totalCost += parseFloat(r.price) * qty
-    totalQty += qty
+    queue.push({ price: parseFloat(r.price), qty })
   })
-  const avgBuyPrice = totalQty > 0 ? totalCost / totalQty : 0
 
-  // 当前盈亏 = (当前价 - 均价) × 总股数
-  const abs = (currentPrice - avgBuyPrice) * totalQty
+  // 全部卖出记录，按时间排序
+  const sells = records
+    .filter(r => r.tradeType === 'SELL')
+    .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
+
+  // FIFO 匹配：每笔卖出从队列头部扣减
+  let realized = 0.0 // 已实现盈亏
+  sells.forEach(r => {
+    let qty = parseInt(r.quantity) || 100
+    const sellPrice = parseFloat(r.price)
+    while (qty > 0 && queue.length > 0) {
+      const head = queue[0]
+      const matched = Math.min(qty, head.qty)
+      realized += (sellPrice - head.price) * matched
+      head.qty -= matched
+      qty -= matched
+      if (head.qty <= 0) queue.shift()
+    }
+  })
+
+  // 剩余持股（队列中累计）
+  let remainingQty = 0, remainingCost = 0
+  queue.forEach(b => {
+    remainingQty += b.qty
+    remainingCost += b.price * b.qty
+  })
+
+  // 浮动盈亏 = (当前价 - 均价) × 剩余股数
+  const unrealized = remainingQty > 0 ? (currentPrice - remainingCost / remainingQty) * remainingQty : 0
+
+  // 总买入成本（用于计算 pct）
+  const totalInvested = buys.reduce((sum, r) => sum + parseFloat(r.price) * (parseInt(r.quantity) || 100), 0)
+  // 总盈亏
+  const abs = realized + unrealized
+  // 盈亏百分比 = 总盈亏 / 总成本
+  const pct = totalInvested > 0 ? (abs / totalInvested) * 100 : 0
+  // 加权均价
+  const avgBuyPrice = remainingQty > 0 ? remainingCost / remainingQty : 0
 
   return {
     currentPrice: currentPrice.toFixed(2),
     avgBuyPrice: avgBuyPrice.toFixed(2),
     abs: abs >= 0 ? '+' + abs.toFixed(2) : abs.toFixed(2),
+    realized: realized >= 0 ? '+' + realized.toFixed(2) : realized.toFixed(2),
+    unrealized: unrealized >= 0 ? '+' + unrealized.toFixed(2) : unrealized.toFixed(2),
+    pct: (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%',
     isProfit: abs >= 0,
-    totalQty,
+    totalQty: remainingQty,
+    totalInvested: totalInvested.toFixed(2),
   }
 }
 
@@ -601,17 +652,21 @@ function renderChart(stock) {
 /* 盈亏展示 */
 .stock-pnl {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
   font-size: 12px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 .stock-pnl.profit { color: #67c23a; }
 .stock-pnl.loss   { color: #f56c6c; }
 .stock-pnl.no-trade { color: #4a5a7a; font-size: 12px; }
+.pnl-row1, .pnl-row2 { display: flex; align-items: center; gap: 6px; }
 .pnl-price { font-size: 13px; font-weight: 600; }
 .pnl-sep  { color: #5a7a9a; }
-.pnl-pct  { font-weight: 700; }
+.pnl-pct  { font-weight: 700; font-size: 13px; }
+.pnl-realized { font-size: 11px; opacity: 0.8; }
+.pnl-unrealized { font-size: 11px; opacity: 0.8; }
+.pnl-pct2 { font-size: 11px; font-weight: 600; }
 .stock-pnl.profit .pnl-pct { color: #67c23a; }
 .stock-pnl.loss   .pnl-pct { color: #f56c6c; }
 
