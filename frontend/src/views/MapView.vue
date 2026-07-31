@@ -136,15 +136,48 @@ function initBaiduMap() {
   mapInstance = new BMapGL.Map('baidu-map')
   mapInstance.centerAndZoom(new BMapGL.Point(tjCenter.lng, tjCenter.lat), 11)
   mapInstance.enableScrollWheelZoom(true)
+
   console.log('[Map] map created, container size:', document.getElementById('baidu-map').offsetWidth, 'x', document.getElementById('baidu-map').offsetHeight)
 
   // 创建统一的 InfoWindow（首次点击后创建）
   // 百度地图的 InfoWindow 跟随 marker，这里用全局变量
 
+  // 强制所有子元素的 cursor（对付 BMapGL canvas / overlay 的 inline cursor）
+  const mapDiv = document.getElementById('baidu-map');
+
   // 加载门店数据
   loadStores()
 
-  // 地图点击事件（校准 / 逆向地理编码）
+  // 用 mousemove + hit detection 动态切 cursor，每次都主动覆盖 BMapGL 的设置
+  mapDiv.addEventListener('mousemove', (e) => {
+    if (adjustMode.value) return
+    const mapRect = mapDiv.getBoundingClientRect()
+    const mx = e.clientX - mapRect.left
+    const my = e.clientY - mapRect.top
+    let onMarker = false
+    for (const m of storeMarkers) {
+      const mp = mapInstance.pointToOverlayPixel(m.getPosition())
+      const dist = Math.sqrt((mx - mp.x) ** 2 + (my - mp.y) ** 2)
+      if (dist < 36) { onMarker = true; break }
+    }
+    // 无论是否在标注上，每次 mousemove 都主动设置，覆盖 BMapGL 之前的任何 cursor 设置
+    mapDiv.style.cursor = onMarker ? 'pointer' : ''
+  })
+
+  // 拖拽结束后 BMapGL 会在 canvas 上设 inline cursor，可能导致 cursor 卡死。
+  // 用 dragend 触发一次 mousemove 事件，让我们的命中检测逻辑自然跑一遍
+  mapInstance.addEventListener('dragend', () => {
+    if (storeMarkers.length === 0) return
+    const rect = mapDiv.getBoundingClientRect()
+    mapDiv.dispatchEvent(new MouseEvent('mousemove', {
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+      bubbles: true
+    }))
+  })
+
+  // 地图点击事件
+// 地图点击事件（校准 / 逆向地理编码）
   // 关键：BMapGL 点击 marker 会同时派发 marker click 和 map click（map click 由 BMapGL 内部主动派发，
   // 非 DOM 冒泡，故 e.domEvent.stopPropagation() 无效）。用 suppressMapClick 标志位过滤掉这次多余的 map click，
   // 否则 reverseGeocode 会弹出百度原生 InfoWindow 覆盖自定义门店面板。
