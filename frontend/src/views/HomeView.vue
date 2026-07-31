@@ -41,16 +41,22 @@
             <div v-if="calcStockPnL(stock)" class="stock-pnl" :class="calcStockPnL(stock).isProfit ? 'profit' : 'loss'">
               <div class="pnl-row1">
                 <span class="pnl-price">${{ calcStockPnL(stock).currentPrice }}</span>
-                <span class="pnl-sep">｜成本 ${{ calcStockPnL(stock).avgBuyPrice }}</span>
-                <span class="pnl-sep">｜剩 {{ calcStockPnL(stock).totalQty }} 股</span>
+                <span v-if="calcStockPnL(stock).totalQty > 0" class="pnl-sep">｜成本 ${{ calcStockPnL(stock).avgBuyPrice }}</span>
+                <span v-if="calcStockPnL(stock).totalQty > 0" class="pnl-sep">｜剩 {{ calcStockPnL(stock).totalQty }} 股</span>
                 <span class="pnl-pct">{{ calcStockPnL(stock).abs }}</span>
               </div>
               <div class="pnl-row2">
                 <span class="pnl-realized">已实现 {{ calcStockPnL(stock).realized }}</span>
-                <span class="pnl-sep">｜</span>
-                <span class="pnl-unrealized">浮动 {{ calcStockPnL(stock).unrealized }}</span>
-                <span class="pnl-sep">｜</span>
-                <span class="pnl-pct2">{{ calcStockPnL(stock).pct }}</span>
+                <template v-if="calcStockPnL(stock).totalQty > 0">
+                  <span class="pnl-sep">｜</span>
+                  <span class="pnl-unrealized">浮动 {{ calcStockPnL(stock).unrealized }}</span>
+                  <span class="pnl-sep">｜</span>
+                  <span class="pnl-pct2">{{ calcStockPnL(stock).pct }}</span>
+                </template>
+                <template v-else>
+                  <span class="pnl-sep">｜</span>
+                  <span class="pnl-realized">已清仓</span>
+                </template>
               </div>
             </div>
             <div v-else-if="stock.chartData && stock.chartData.length > 0" class="stock-pnl no-trade">
