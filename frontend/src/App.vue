@@ -18,16 +18,23 @@
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
   background: #0a0e1a;
   color: #e0e6ed;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
 }
 
 .app-shell {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
   background: #0a0e1a;
 }

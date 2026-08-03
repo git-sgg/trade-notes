@@ -562,16 +562,15 @@ function renderChart(stock) {
 <style>
 /* ========== 全局 ========== */
 .app {
-  min-height: 100vh;
+  height: 100%;
   background: #0a0e1a;
   padding: 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ========== 顶部 ========== */
 .topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
   background: #0d1425;
   padding: 12px 0 10px;
   border-bottom: 1px solid #1a2540;
