@@ -46,8 +46,9 @@ public class StockPriceService {
 
     public List<KLinePoint> getKLineData(String symbol, int days) {
         String userSymbol = symbol.toUpperCase().trim();
+        String cacheKey = userSymbol + "#" + days;
         String apiSymbol = normalizeSymbol(userSymbol);
-        CacheEntry cached = priceCache.get(userSymbol);
+        CacheEntry cached = priceCache.get(cacheKey);
         if (cached != null && System.currentTimeMillis() - cached.timestamp < CACHE_TTL_MS) {
             return cached.data;
         }
@@ -68,7 +69,7 @@ public class StockPriceService {
         }
 
         if (!data.isEmpty()) {
-            priceCache.put(userSymbol, new CacheEntry(data));
+            priceCache.put(cacheKey, new CacheEntry(data));
         }
         return data;
     }
@@ -380,6 +381,7 @@ public class StockPriceService {
     }
 
     public void invalidateCache(String symbol) {
-        priceCache.remove(symbol.toUpperCase().trim());
+        String prefix = symbol.toUpperCase().trim() + "#";
+        priceCache.keySet().removeIf(k -> k.startsWith(prefix));
     }
 }
