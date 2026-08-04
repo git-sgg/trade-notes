@@ -38,11 +38,14 @@ cd frontend && npm install && npm run build && cd ..
 # 后端编译 + 打包 JAR
 cd backend && mvn package -DskipTests && cd ..
 
-# 构建 Docker 镜像
-docker build -t trade-notes-backend:latest ./backend
+# 构建 Docker 镜像（按构建时间打版本标签：日期-时分，一天内多次构建也能区分）
+TAG=$(date +%Y%m%d-%H%M)
+docker build -t trade-notes-backend:$TAG ./backend
 
-# 导出为 tar 文件（拷到 NAS）
-docker save trade-notes-backend:latest | gzip > ~/Desktop/trade-notes-backend.tar.gz
+# 导出为 tar 文件（拷到 NAS，文件名与镜像标签一致，便于区分版本）
+docker save -o ~/Desktop/trade-notes-deploy/trade-notes-backend-$TAG.tar trade-notes-backend:$TAG
+
+# 说明：NAS 上创建容器时选择最新时间戳的镜像标签（如 trade-notes-backend:20260804-1731），不要选旧版本
 ```
 
 ### 二、部署到 NAS
