@@ -322,7 +322,7 @@ async function handleDeleteRecord(stockId, recordId) {
 // ========== 盈亏计算 ==========
 /**
  * 返回 { pct, currentPrice, avgBuyPrice, abs, realized, unrealized, remainingQty, totalInvested }
- * abs: 总盈亏 = 已实现 + 浮动盈亏
+ * abs: 当前盈亏（有持仓 = 浮动盈亏；已清仓 = 已实现盈亏）
  * realized: 已实现盈亏（卖出落袋）
  * unrealized: 浮动盈亏（剩余持股）
  * remainingQty: 剩余持股数
@@ -335,28 +335,39 @@ function calcStockPnL(stock) {
 
   const currentPrice = parseFloat(prices[prices.length - 1].close)
 
+  // 按 交易日期 + 创建时间 排序，保证同日多笔买卖也能正确 FIFO
+  const byTime = (a, b) => {
+    const d = String(a.tradeDate || '').localeCompare(String(b.tradeDate || ''))
+    if (d !== 0) return d
+    const ca = String(a.createdAt || '')
+    const cb = String(b.createdAt || '')
+    const t = ca.localeCompare(cb)
+    if (t !== 0) return t
+    return (Number(a.id) || 0) - (Number(b.id) || 0)
+  }
+
   // 全部买入记录，按时间排序（FIFO）
   const buys = records
     .filter(r => r.tradeType === 'BUY')
-    .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
+    .sort(byTime)
   if (buys.length === 0) return null
 
   // 构建 FIFO 买入队列，每条记录 { price, qty }
   const queue = []
   buys.forEach(r => {
-    const qty = parseInt(r.quantity) || 100
+    const qty = parseInt(r.quantity) || 0
     queue.push({ price: parseFloat(r.price), qty })
   })
 
   // 全部卖出记录，按时间排序
   const sells = records
     .filter(r => r.tradeType === 'SELL')
-    .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
+    .sort(byTime)
 
   // FIFO 匹配：每笔卖出从队列头部扣减
   let realized = 0.0 // 已实现盈亏
   sells.forEach(r => {
-    let qty = parseInt(r.quantity) || 100
+    let qty = parseInt(r.quantity) || 0
     const sellPrice = parseFloat(r.price)
     while (qty > 0 && queue.length > 0) {
       const head = queue[0]
@@ -378,23 +389,28 @@ function calcStockPnL(stock) {
   // 浮动盈亏 = (当前价 - 均价) × 剩余股数
   const unrealized = remainingQty > 0 ? (currentPrice - remainingCost / remainingQty) * remainingQty : 0
 
-  // 总买入成本（用于计算 pct）
-  const totalInvested = buys.reduce((sum, r) => sum + parseFloat(r.price) * (parseInt(r.quantity) || 100), 0)
-  // 总盈亏
-  const abs = realized + unrealized
-  // 盈亏百分比 = 总盈亏 / 总成本
-  const pct = totalInvested > 0 ? (abs / totalInvested) * 100 : 0
+  // 总买入成本（已清仓时用于计算收益率）
+  const totalInvested = buys.reduce((sum, r) => sum + parseFloat(r.price) * (parseInt(r.quantity) || 0), 0)
+
+  // 当前盈亏：有持仓 = 浮动盈亏；已清仓 = 已实现盈亏
+  const currentPnL = remainingQty > 0 ? unrealized : realized
+
+  // 盈亏百分比：有持仓按持仓成本；已清仓按总投入
+  const pct = remainingQty > 0
+    ? (remainingCost > 0 ? (unrealized / remainingCost) * 100 : 0)
+    : (totalInvested > 0 ? (realized / totalInvested) * 100 : 0)
+
   // 加权均价
   const avgBuyPrice = remainingQty > 0 ? remainingCost / remainingQty : 0
 
   return {
     currentPrice: currentPrice.toFixed(2),
     avgBuyPrice: avgBuyPrice.toFixed(2),
-    abs: abs >= 0 ? '+' + abs.toFixed(2) : abs.toFixed(2),
+    abs: currentPnL >= 0 ? '+' + currentPnL.toFixed(2) : currentPnL.toFixed(2),
     realized: realized >= 0 ? '+' + realized.toFixed(2) : realized.toFixed(2),
     unrealized: unrealized >= 0 ? '+' + unrealized.toFixed(2) : unrealized.toFixed(2),
     pct: (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%',
-    isProfit: abs >= 0,
+    isProfit: currentPnL >= 0,
     totalQty: remainingQty,
     totalInvested: totalInvested.toFixed(2),
   }
